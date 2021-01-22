@@ -1,0 +1,188 @@
+ALL PWDS: password123
+
+worker-1:
+    sudo hostname worker-1
+    IP: 10.0.0.31
+    OSQuery: https://osquery.io/downloads/official/4.6.0
+        installation:
+            - wget https://pkg.osquery.io/rpm/osquery-4.6.0-1.linux.x86_64.rpm
+            - sudo rpm -i osquery-4.6.0-1.linux.x86_64.rpm
+worker-2:
+    sudo hostname worker-2
+    IP: 10.0.0.16
+    OSQuery: https://osquery.io/downloads/official/4.6.0
+        installation:
+            - wget https://pkg.osquery.io/rpm/osquery-4.6.0-1.linux.x86_64.rpm
+            - sudo rpm -i osquery-4.6.0-1.linux.x86_64.rpm
+worker-3:
+    sudo hostname worker-3
+    IP: 10.0.0.80
+    OSQuery: https://osquery.io/downloads/official/4.6.0
+        installation:
+            - wget https://pkg.osquery.io/rpm/osquery-4.6.0-1.linux.x86_64.rpm
+            - sudo rpm -i osquery-4.6.0-1.linux.x86_64.rpm
+worker-4:
+    sudo hostname worker-4
+    IP: 10.0.0.65
+    OSQuery: https://osquery.io/downloads/official/4.6.0
+        installation:
+            - wget https://pkg.osquery.io/rpm/osquery-4.6.0-1.linux.x86_64.rpm
+            - sudo rpm -i osquery-4.6.0-1.linux.x86_64.rpm
+worker-5:
+    sudo hostname worker-5
+    IP: 10.0.0.14
+    OSQuery: https://osquery.io/downloads/official/4.6.0
+        installation:
+            - wget https://pkg.osquery.io/rpm/osquery-4.6.0-1.linux.x86_64.rpm
+            - sudo rpm -i osquery-4.6.0-1.linux.x86_64.rpm
+osquery-lead:
+    - sudo hostname osquery-lead # set hostname
+    IP: 10.0.0.175
+        installation:
+            - curl -L https://pkg.osquery.io/rpm/GPG | sudo tee /etc/pki/rpm-gpg/RPM-GPG-KEY-osquery
+            - sudo yum-config-manager --add-repo https://pkg.osquery.io/rpm/osquery-s3-rpm.repo
+            - sudo yum-config-manager --enable osquery-s3-rpm
+            - sudo yum install osquery
+    Installed:
+        - MySQL
+            installation:
+                - wget https://repo.mysql.com/mysql57-community-release-el7.rpm
+                - rpm -i mysql57-community-release-el7.rpm
+                - yum update
+                - yum install mysql-server
+            Configuration:
+                - sudo systemctl start mysqld
+                #grab the temp password to access the DB as root for the first time
+                - grep -i password /var/log/mysqld.log
+                #login with temp pwd
+                - mysql -u root -p
+                #reset pwd
+                - mysql> ALTER USER "root"@"localhost" IDENTIFIED BY "P@ssword123";
+                - mysql> flush privileges;
+                - mysql> exit
+                - sudo mysqld stop
+                - sudo systemctl start mysqld
+                #create the DB that fleet will use
+                - echo 'CREATE DATABASE kolide;' | mysql -u root -p
+
+        - Redis
+            installation:
+                - sudo yum install epel-release yum-utils
+                - sudo yum install http://rpms.remirepo.net/enterprise/remi-release-7.rpm
+                - sudo yum-config-manager --enable remi
+                - sudo yum install redis
+                - sudo systemctl start redis
+        - FleetDM https://github.com/fleetdm/fleet
+            installation:
+                - curl -LO https://github.com/fleetdm/fleet/releases/latest/download/fleet.zip
+                - unzip fleet.zip 'linux/*' -d fleet
+    # Once everything is installed, run the following:
+        - sudo mkdir /opt/fleet
+        - sudo mv ~/fleet /opt/fleet
+        - sudo chown -R <user>:<group> /opt/fleet/
+        #prepare the DB with DB migration
+        - /opt/fleet/fleet/linux/fleet prepare db --mysql_address=127.0.0.1:3306 --mysql_database=kolide --mysql_username=root --mysql_password=P@ssword123
+        #generate TLS cert/key self-aigned
+        - openssl genrsa -out /tmp/server.key 4096
+        - openssl req -new -key /tmp/server.key -out /tmp/server.csr
+        #The following files should now exist:
+            /tmp/server.cert
+            /tmp/server.key
+            /tmp/server.csr
+        #This will error out and provide the jwt key to use
+        - /opt/fleet/fleet/linux/fleet serve --mysql_address=127.0.0.1:3306 --mysql_database=kolide --mysql_username=root --mysql_password=P@ssword123 --redis_address=127.0.0.1:6379 --server_cert=/tmp/server.cert --server_key=/tmp/server.key --logging_json
+        #use the jwt ket in the output
+        - /opt/fleet/fleet/linux/fleet serve --mysql_address=127.0.0.1:3306 --mysql_database=kolide --mysql_username=root --mysql_password=P@ssword123 --redis_address=127.0.0.1:6379 --server_cert=/tmp/server.cert --server_key=/tmp/server.key --logging_json --auth_jwt_key=oCluUaiPeou9/6fICI23CKaiihYbyZoE
+        #We need to disable selinus
+        - sudo vim /etc/sysconfig/selinux
+            ##replace SELINUX=enforcing with SELINUX=disabled
+        #disable firewalld
+        - systemctl stop firewalld
+        - systemctl disable firewalld
+        #prevent any other services form starting firewalld
+        -  systemctl mask --now firewalld
+        #install and start iptables for IPv4 and IPv6
+        -  yum install iptables-services
+        -  systemctl start iptables
+        -  systemctl start ip6tables
+        -  systemctl enable iptables
+        -  systemctl enable ip6tables
+        -  systemctl status iptables
+        #add port 8080 to allowed list in iptables
+        -  sudo iptables -I INPUT 5 -p tcp -m state --state NEW -m tcp --dport 8080 -j ACCEPT
+        -  sudo systemctl restart iptables
+        #check iptables rules
+        -  iptables -nvL
+        #navigate to 10.0.0.175:8080 and setup the first user
+        #u: austindunn p:P@ssword123
+
+# Adding hosts to the kolide fleet
+- in the web UI go to add new host
+- grab the enroll secret and place it in /etc/osquery/secret.txt on each osqueryd endpoint
+- enroll_secret: 7TPKVarhPQu8r8GcBQRJ13WPQhCJHAyA
+- kolide cert: (save to /etc/osquery/fleet.cert)
+-----BEGIN CERTIFICATE-----
+MIIFoDCCA4gCCQCBwyywzFRKZDANBgkqhkiG9w0BAQsFADCBkTELMAkGA1UEBhMC
+VVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVZhY2F2aWxsZTEMMAoG
+A1UECgwDQm94MREwDwYDVQQLDAhJbmZyYVNlYzEVMBMGA1UEAwwMb3NxdWVyeS1s
+ZWFkMSEwHwYJKoZIhvcNAQkBFhJhdXN0aW5kdW5uQGJveC5jb20wHhcNMjEwMTIx
+MDk0NTM3WhcNMjIwMTIyMDk0NTM3WjCBkTELMAkGA1UEBhMCVVMxEzARBgNVBAgM
+CkNhbGlmb3JuaWExEjAQBgNVBAcMCVZhY2F2aWxsZTEMMAoGA1UECgwDQm94MREw
+DwYDVQQLDAhJbmZyYVNlYzEVMBMGA1UEAwwMb3NxdWVyeS1sZWFkMSEwHwYJKoZI
+hvcNAQkBFhJhdXN0aW5kdW5uQGJveC5jb20wggIiMA0GCSqGSIb3DQEBAQUAA4IC
+DwAwggIKAoICAQDWIKKN9TnyZqcTGVd/kUQKqknH+XBrckHJblgi8K7f+zK+w4U5
+zDnqMxUgMSXJiTpCojP/C5G45VNgazBkQ8CYCxjj8jslGbo51EuMOTi0+R8pvOjQ
+MchIPWTsuDpfv+pX9kwcWJ/KkXyHhZoq3jWOyG7OnR+m5yLu6fXbPNUQXZeaelW1
+m6l4fJenN6bdeQjBkgCHsGmSayNhJsYijnUugLmG5H7V4c2+/Xk0FlG7leAPi7mD
+Vbx7NdmbQ8wD7oX65wr3aJB+HrvLGeJygVAAmTAtcoN6Vq7wgdgPCXhG5dLbaaV/
+Ymf4/R3dAUzJ/jxJmvQeY/j5hb+oaooj0L254k9IUeYuITa7ktSD1XdGZdoTP2uv
+jdL97jFJurbubItAkGOhFt/O7BDKnDh3Do4hw7oFzAht9ne22hbZEwquElhnDs79
+nGH3Y13Q8M+AyjLyARF3CEUSTg8X4wjzJ+YBZQwr9Rl8NxgNjAP8mdNh3Iyq8B3a
+sKL4NO7bUObpi/LDfbVjDS35vRmak7iCcA9h4EOyQULW3HTA9uBjtkd4NC90i6xH
+1CNP2cOJSxfAaKm4ACJEpDUTAAyb0fGh5gxc4Z3O4zBqtYKS8cftTXWAa1ZTzMM4
+ofK23enbN4xNaqx87m5Bm1bsPBdbrvoFYNfrxiWwDhOJofn/u/QVAIhDtQIDAQAB
+MA0GCSqGSIb3DQEBCwUAA4ICAQBi/HsxUBtYd7hf+JigBA673qrnoR/HUIOiGi70
++cO4clWfrI6veWeJataJI2fYE4F1aNRJEcqTdd+6YzwMmISxi4NJbibMhb7omvrJ
+lPv2GgeCui2d8AZYtC8zqwuRwRiP4WdaAIKgJfw2fue1Rwj0rhZTV/6VSLrZfUzv
+z16RtBSuJC1vUWoHiwfGqguxv/MbxlABeyBjQwUG6qwtPfukmUF63xm7sdx/egwT
+46bx14obye32HS+j/GO5WRUjBCJKsRQxFhVOzEAAyPyr1OMV+cvjOOkltpUXrBA+
+PbsYuj+O7D9LBkRqRm2Z7o2/xivUSshj2RYnZFQm6w7mB2L3zWePnU2hVII3uB01
+RJHBc2Bi+9oonjK39Ny/zs+7AG4EWCobbeqM4UoC0pRGmdlwIDqkrSIR+7INWhmy
+oElqBwhB+RlY58DQZbwg4Rck9ngb9udpHyDef+DMa20F4e7jRPfbh1j8x4BNcT0Z
+l0NeFdUjUpbuD0ADaHovnQ/qg65a6pN6e0VqHsBsgg8PYROec5ZwjOLiZJu7VIJ7
+w0eI+1MgJeVx4aR8AcbUSpWYDlNdffh4TCFRrrhnsKAo97BO4VPS8VMn3lGkrrhB
+E29k7bKOEN7xJQfS+BrdRs+I6x85fW1UHMMt6wblSUPjvaVaPiutLZeRPrEKp+YE
+ol8vVA==
+-----END CERTIFICATE-----
+
+#set /etc/hosts on each osqueryd endpoint to have the proper cname for the fleet manager
+ex: 10.0.0.175	osquery-lead
+
+#enroll each osqueryd endpoint into the fleet with the following command:
+ #first add this to /etc/osquery/flagfile.txt
+--enroll_secret_path=/etc/osquery/secret.txt
+--tls_server_certs=/etc/osquery/fleet.pem
+--tls_hostname=osquery-lead:8080
+--host_identifier=instance
+--enroll_tls_endpoint=/api/v1/osquery/enroll
+--config_plugin=tls
+--config_tls_endpoint=/api/v1/osquery/config
+--config_refresh=10
+--disable_distributed=false
+--distributed_plugin=tls
+--distributed_interval=10
+--distributed_tls_max_attempts=3
+--distributed_tls_read_endpoint=/api/v1/osquery/distributed/read
+--distributed_tls_write_endpoint=/api/v1/osquery/distributed/write
+--logger_plugin=tls
+--logger_tls_endpoint=/api/v1/osquery/log
+--logger_tls_period=10
+
+#next run
+- sudo osqueryd --flagfile=/etc/osquery/flagfile.txt
+
+
+##Fleetctl use
+- /opt/fleet/fleet/linux/fleetctl config set --address https://osquery-lead:8080
+- vim ~.fleet/config -->     rootca: "" # add this line 
+- /opt/fleet/fleet/linux/fleetctl login
