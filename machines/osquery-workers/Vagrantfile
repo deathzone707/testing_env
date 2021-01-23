@@ -1,0 +1,31 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+VAGRANTFILE_API_VERSION = "2"
+
+cluster = {
+    "OSQUERY-Lead" => { :ip => "162.168.99.100", :cpus => 2, :mem => 2048 },
+    "OSQUERY-Worker-1" => { :ip => "162.168.99.101", :cpus => 1, :mem => 1024},
+    "OSQUERY-Worker-2" => { :ip => "162.168.99.102", :cpus => 1, :mem => 1024},
+    "OSQUERY-Worker-3" => { :ip => "162.168.99.103", :cpus => 1, :mem => 1024},
+    "OSQUERY-Worker-4" => { :ip => "162.168.99.104", :cpus => 1, :mem => 1024},
+    "OSQUERY-Worker-5" => { :ip => "162.168.99.105", :cpus => 1, :mem => 1024}
+}
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+
+    cluster.each_with_index do |(hostname, info), index|
+
+        config.vm.define hostname do |cfg|
+
+            cfg.vm.provider :virtualbox do |vb, override|
+                config.vm.box = "centos/7"
+                override.vm.network :private_network, ip: "#{info[:ip]}"
+                override.vm.hostname = hostname
+                vb.name = hostname
+                vb.customize ["modifyvm", :id, "--memory", info[:mem], "--cpus", info[:cpus], "--hwvirtex", "on"]
+            end
+        end
+    end
+end
+
