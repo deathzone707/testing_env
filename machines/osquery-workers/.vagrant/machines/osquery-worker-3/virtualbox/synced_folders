@@ -1,1 +1,0 @@
-{"rsync":{"/vagrant":{"type":"rsync","guestpath":"/vagrant","hostpath":"C:/Users/Austin/Desktop/code/virtual_machines/machines/osquery-workers","disabled":false,"__vagrantfile":true,"owner":"vagrant","group":"vagrant"}}}
