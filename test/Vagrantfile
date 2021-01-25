@@ -1,0 +1,65 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+VAGRANTFILE_API_VERSION = "2"
+
+lead = {
+    "OSQUERY-Lead" => { :ip => "192.168.99.100", :cpus => 2, :mem => 2048 }
+}
+
+workers = {
+    "OSQUERY-Worker-1" => { :ip => "192.168.99.101", :cpus => 1, :mem => 1024}
+}
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+
+    workers.each_with_index do |(hostname, info), index|
+
+        config.vm.define hostname do |cfg|
+
+            cfg.vm.provider :virtualbox do |vb, override|
+                config.vm.box = "generic/ubuntu2010"
+                override.vm.network :private_network, ip: "#{info[:ip]}"
+                override.vm.hostname = hostname
+                vb.gui = false
+                vb.name = hostname
+                vb.customize ["modifyvm", :id, "--memory", info[:mem], "--cpus", info[:cpus], "--hwvirtex", "on"]
+            cfg.vm.provision "shell", inline: <<-SHELL
+                sudo apt-get -y update && sudo apt-get -y upgrade
+                sudo apt -y install libz-dev
+                sudo apt install libc++1
+                sudo apt -y install cmake
+                cd /tmp
+                mkdir /tmp/ebpfpub
+                mkdir /tmp/ebpfpub/build
+                cd /tmp/ebpfpub/build
+                wget https://github.com/osquery/osquery-toolchain/releases/download/1.1.0/osquery-toolchain-1.1.0-x86_64.tar.xz 
+                sudo tar -xf /tmp/ebpfpub/build/osquery-toolchain-*.tar.xz -C /opt/
+                sudo chown -R vagrant:vagrant /opt
+                cd /tmp
+                rm -rf ebpfpub
+                git clone --recursive https://github.com/trailofbits/ebpfpub
+                cd ebpfpub
+                mkdir build && cd build
+                cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DEBPF_COMMON_TOOLCHAIN_PATH:PATH=/opt/osquery-toolchain -DEBPFPUB_ENABLE_INSTALL:BOOL=true -DEBPFPUB_ENABLE_EXAMPLES:BOOL=true -DEBPF_COMMON_ENABLE_TESTS:BOOL=true ..
+                cmake --build . -j $(($(nproc) + 1))
+                cmake --build . --target run-ebpf-common-tests
+                mkdir install
+                export DESTDIR=`realpath install`
+                cd /tmp/ebpfpub/build/
+                cmake --build . --target install
+                mkdir package
+                cd package
+                PATH=$PATH:/opt/osquery-toolchain/usr/bin/
+                cmake -DEBPFPUB_INSTALL_PATH:PATH="${DESTDIR}" /tmp/ebpfpub/package_generator/
+                cmake --build . --target package
+                sudo dpkg -i ebpfpub-1.1.0-1.x86_64.deb
+                cd /tmp
+                wget https://pkg.osquery.io/deb/osquery_4.6.0-1.linux_amd64.deb
+                sudo dpkg -i osquery_4.6.0-1.linux_amd64.deb
+            SHELL
+            end
+        end
+    end
+end
+
